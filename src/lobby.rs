@@ -1,22 +1,20 @@
 use crate::messages::{ClientActorMessage, Connect, Disconnect, WsMessage};
 use actix::prelude::{Actor, Context, Handler, Recipient};
 use std::collections::{HashMap, HashSet};
+use std::io::Read;
+use std::os::unix::net::UnixListener;
+use std::sync::mpsc::{channel, Receiver};
+use std::sync::{Arc, Mutex};
 use uuid::Uuid;
+
+use std::thread;
 
 type Socket = Recipient<WsMessage>;
 
+#[derive(Default)]
 pub struct Lobby {
     sessions: HashMap<Uuid, Socket>,     //self id to self
     rooms: HashMap<Uuid, HashSet<Uuid>>, //room id  to list of users id
-}
-
-impl Default for Lobby {
-    fn default() -> Lobby {
-        Lobby {
-            sessions: HashMap::new(),
-            rooms: HashMap::new(),
-        }
-    }
 }
 
 impl Lobby {
@@ -78,7 +76,37 @@ impl Handler<Connect> for Lobby {
 
         self.sessions.insert(msg.self_id, msg.addr);
 
-        self.send_message(&format!("your id is {}", msg.self_id), &msg.self_id);
+        // Listen to Unix socket and send message to client on received message
+        let socket_path = "/dev/tty.usbmodem111401".to_string();
+        let (tx, rx) = channel();
+        let lobby = Arc::new(Mutex::new(self));
+
+        thread::spawn(move || {
+            listen_to_unix_socket(socket_path, rx, || Arc::clone(&lobby));
+        });
+
+        // Handle messages received from the socket listener
+        while let Ok(message) = rx.recv() {
+            self.send_message(&message, &msg.self_id);
+        }
+
+        //self.send_message(&format!("your id is {}", msg.self_id), &msg.self_id);
+    }
+}
+
+fn listen_to_unix_socket(socket_path: String, rx: Receiver<String>, lobby: Lobby) {
+    if let Ok(listener) = UnixListener::bind(&socket_path) {
+        for stream in listener.incoming() {
+            if let Ok(mut stream) = stream {
+                let mut buffer = [0; 1024];
+                if let Ok(bytes_read) = stream.read(&mut buffer) {
+                    let message = String::from_utf8_lossy(&buffer[..bytes_read]).to_string();
+                    let _ = rx.send(message);
+                }
+            }
+        }
+    } else {
+        eprintln!("Failed to bind to Unix socket: {}", socket_path);
     }
 }
 
