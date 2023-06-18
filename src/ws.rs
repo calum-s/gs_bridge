@@ -1,10 +1,11 @@
 use crate::lobby::Lobby;
-use crate::messages::{ClientActorMessage, Connect, Disconnect, WsMessage};
-use actix::{fut, ActorContext, ActorFuture, ContextFutureSpawner, WrapFuture};
+use crate::messages::{Connect, Disconnect, WsMessage};
+use actix::{fut, ActorContext, ActorFuture, ContextFutureSpawner, WrapFuture, ActorFutureExt};
 use actix::{Actor, Addr, Running, StreamHandler};
 use actix::{AsyncContext, Handler};
 use actix_web_actors::ws;
 use actix_web_actors::ws::Message::Text;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use uuid::Uuid;
 
@@ -12,17 +13,15 @@ const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
 const CLIENT_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub struct WsConn {
-    room: Uuid,
-    lobby_addr: Addr<Lobby>,
+    lobby_addr: Arc<Addr<Lobby>>,
     hb: Instant,
     id: Uuid,
 }
 
 impl WsConn {
-    pub fn new(room: Uuid, lobby: Addr<Lobby>) -> WsConn {
+    pub fn new(lobby: Arc<Addr<Lobby>>) -> WsConn {
         WsConn {
             id: Uuid::new_v4(),
-            room,
             hb: Instant::now(),
             lobby_addr: lobby,
         }
@@ -39,7 +38,6 @@ impl Actor for WsConn {
         self.lobby_addr
             .send(Connect {
                 addr: addr.recipient(),
-                lobby_id: self.room,
                 self_id: self.id,
             })
             .into_actor(self)
@@ -56,7 +54,6 @@ impl Actor for WsConn {
     fn stopping(&mut self, _: &mut Self::Context) -> Running {
         self.lobby_addr.do_send(Disconnect {
             id: self.id,
-            room_id: self.room,
         });
         Running::Stop
     }
@@ -95,11 +92,7 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsConn {
                 ctx.stop();
             }
             Ok(ws::Message::Nop) => (),
-            Ok(Text(s)) => self.lobby_addr.do_send(ClientActorMessage {
-                id: self.id,
-                msg: s,
-                room_id: self.room,
-            }),
+            Ok(Text(_)) => (),
             Err(e) => std::panic::panic_any(e),
         }
     }

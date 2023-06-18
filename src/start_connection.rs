@@ -1,18 +1,19 @@
+use std::{sync::Arc, borrow::BorrowMut, ops::Deref};
+
 use crate::lobby::Lobby;
 use crate::ws::WsConn;
 use actix::Addr;
-use actix_web::{get, web::Data, web::Path, web::Payload, Error, HttpRequest, HttpResponse};
+use actix_web::{get, web::Data, web::Payload, Error, HttpRequest, HttpResponse};
 use actix_web_actors::ws;
-use uuid::Uuid;
 
-#[get("/{group_id}")]
+#[get("/")]
 pub async fn start_connection(
     req: HttpRequest,
     stream: Payload,
-    Path(group_id): Path<Uuid>,
-    srv: Data<Addr<Lobby>>,
+    srv: Data<Arc<Addr<Lobby>>>,
 ) -> Result<HttpResponse, Error> {
-    let ws = WsConn::new(group_id, srv.get_ref().clone());
+    println!("New connection");
+    let ws = WsConn::new(srv.get_ref().clone());
 
     let resp = ws::start(ws, &req, stream)?;
     Ok(resp)
