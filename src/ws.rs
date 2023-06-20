@@ -1,6 +1,6 @@
 use crate::lobby::Lobby;
 use crate::messages::{Connect, Disconnect, WsMessage};
-use actix::{fut, ActorContext, ActorFuture, ContextFutureSpawner, WrapFuture, ActorFutureExt};
+use actix::{fut, ActorContext, ActorFutureExt, ContextFutureSpawner, WrapFuture};
 use actix::{Actor, Addr, Running, StreamHandler};
 use actix::{AsyncContext, Handler};
 use actix_web_actors::ws;
@@ -52,9 +52,7 @@ impl Actor for WsConn {
     }
 
     fn stopping(&mut self, _: &mut Self::Context) -> Running {
-        self.lobby_addr.do_send(Disconnect {
-            id: self.id,
-        });
+        self.lobby_addr.do_send(Disconnect { id: self.id });
         Running::Stop
     }
 }

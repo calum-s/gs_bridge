@@ -1,13 +1,13 @@
-use crate::messages::{Connect, Disconnect, WsMessage, Broadcast};
+use crate::messages::{Broadcast, Connect, Disconnect, WsMessage};
 use actix::prelude::{Actor, Context, Handler, Recipient};
-use std::collections::{HashMap};
+use std::collections::HashMap;
 use uuid::Uuid;
 
 type Socket = Recipient<WsMessage>;
 
 #[derive(Default)]
 pub struct Lobby {
-    sessions: HashMap<Uuid, Socket>,     //self id to self
+    sessions: HashMap<Uuid, Socket>, //self id to self
 }
 
 impl Actor for Lobby {
@@ -34,8 +34,8 @@ impl Handler<Broadcast> for Lobby {
     type Result = ();
 
     fn handle(&mut self, msg: Broadcast, _ctx: &mut Self::Context) -> Self::Result {
-        for (_, socket) in &self.sessions {
-            let _ = socket.do_send(WsMessage(msg.msg.clone()));
+        for socket in self.sessions.values() {
+            socket.do_send(WsMessage(msg.msg.clone()));
         }
     }
 }

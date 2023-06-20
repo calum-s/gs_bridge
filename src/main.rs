@@ -12,7 +12,12 @@ use actix::{Actor, Addr};
 use messages::Broadcast;
 use start_connection::start_connection as start_connection_route;
 
-use actix_web::{App, HttpServer, web::Data};
+use serialport;
+use std::io::BufRead;
+use std::io::BufReader;
+use std::time::Duration;
+
+use actix_web::{web::Data, App, HttpServer};
 use tokio::{io::AsyncReadExt, try_join};
 
 #[actix_web::main]
@@ -36,21 +41,51 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 e
             })
         },
-        socket_handler(lobby)
-    ).map(|_| ())
+        //socket_handler(lobby),
+        exit_code()
+    )
+    .map(|_| ())
+}
+
+async fn exit_code() -> Result<(), Box<dyn Error>> {
+    tokio::signal::ctrl_c()
+        .await
+        .expect("failed to install CTRL+C signal handler");
+    println!("CTRL+C received, shutting down");
+
+    std::process::exit(1);
 }
 
 async fn socket_handler(lobby: Arc<Addr<Lobby>>) -> Result<(), Box<dyn Error>> {
-    let mut listener = tokio::net::UnixStream::connect("/tmp/echo.sock").await?;
+    let path = "/dev/tty.usbmodem111401";
+
+    let serial_port = serialport::new(path, 9600)
+        .timeout(Duration::from_millis(2000))
+        .open()
+        .expect("Failed to open serial port");
+
+    // let output = "This is a test.\n".as_bytes();
+    // serial_port.write_all(output).expect("Write failed");
+    // serial_port.flush().unwrap();
+
+    let mut reader = BufReader::new(serial_port);
+    let mut my_str = String::new();
+
     loop {
-        let mut buf = [0; 1024];
-        let n = listener.read(&mut buf).await?;
-        println!("read {} bytes", n);
-        lobby
-            .clone()
-            .send(Broadcast {
-                msg: String::from_utf8_lossy(&buf[..n]).into_owned(),
-            })
-            .await?;
+        my_str.clear();
+        match reader.read_line(&mut my_str) {
+            Ok(_) => {
+                lobby
+                    .clone()
+                    .send(Broadcast {
+                        msg: my_str.to_owned(),
+                    })
+                    .await?;
+            }
+            Err(err) => {
+                print!("Error reading from port: {}", err);
+                std::process::exit(1);
+            }
+        }
     }
 }
